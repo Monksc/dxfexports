@@ -33,6 +33,7 @@ fn bulge_to_arc(
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -51,6 +52,56 @@ pub struct Arc {
     pub end_angle: f64,
     pub radius: f64,
     pub bulge: f64,
+}
+
+impl Arc {
+    fn total_angle(&self) -> f64 {
+        let angle = (self.end_angle - self.start_angle).abs();
+        if self.bulge.abs() > 1.0 {
+            if angle < std::f64::consts::PI {
+                2. * std::f64::consts::PI - angle
+            } else {
+                angle
+            }
+        } else {
+            if angle > std::f64::consts::PI {
+                2. * std::f64::consts::PI - angle
+            } else {
+                angle
+            }
+        }
+    }
+
+    fn is_counter_clockwise(&self) -> bool {
+        self.bulge >= 0.
+    }
+
+    pub fn to_points(&self, tolerance: f64) -> Vec<Point> {
+        let total_angle = self.total_angle();
+        let n_points = (self.radius * total_angle / tolerance).ceil() as u64;
+        let mut points = Vec::with_capacity(n_points as usize + 1);
+
+        let d_radian = if self.is_counter_clockwise() {
+            1.0
+        } else {
+            -1.0
+        } * total_angle
+            / n_points as f64;
+
+        eprintln!("total_angle: {} d_radian: {}", total_angle, d_radian);
+
+        // points.push(self.from_point);
+        for i in 1..n_points {
+            let angle = self.start_angle + d_radian * i as f64;
+            points.push(Point::new(
+                angle.cos() * self.radius + self.center.x,
+                angle.sin() * self.radius + self.center.y,
+            ));
+        }
+        // points.push(self.to_point);
+
+        points
+    }
 }
 
 pub enum ArcMoveLineTo {

@@ -1,5 +1,9 @@
-use dxf::Drawing;
+use dxf::{
+    entities::{EntityType, LwPolyline},
+    Drawing,
+};
 
+use geo::Coord;
 use geo_types::{coord, LineString};
 
 /// Used to add a method to a dxf::Drawing to convert it to a Vec<geo::LineString>
@@ -14,11 +18,11 @@ use geo_types::{coord, LineString};
 /// let linestrings = drawing.to_geo_linestring(0.0001);
 /// ```
 pub trait ToGeoLineString {
-    fn to_geo_linestring(&self, flatten_value: f32) -> Vec<LineString>;
+    fn to_geo_linestring(&self, flatten_value: f64) -> Vec<LineString>;
 }
 
 impl ToGeoLineString for Drawing {
-    fn to_geo_linestring(&self, flatten_value: f32) -> Vec<LineString> {
+    fn to_geo_linestring(&self, flatten_value: f64) -> Vec<LineString> {
         export_geo_linestring(&self, flatten_value)
     }
 }
@@ -38,9 +42,9 @@ impl ToGeoLineString for Drawing {
 /// use dxf::Drawing;
 ///
 /// let drawing = Drawing::load_file("test.dxf").expect("Not a good file");
-/// let linestrings = export_geo_linestring(&drawing, 0.0001);
+/// let linestrings = export_geo_linestring_from_lyon(&drawing, 0.0001);
 /// ```
-pub fn export_geo_linestring(drawing: &Drawing, flatten_value: f32) -> Vec<LineString> {
+pub fn export_geo_linestring_from_lyon(drawing: &Drawing, flatten_value: f32) -> Vec<LineString> {
     let paths = super::lyon_exporter::export_lyon(drawing);
 
     let mut line_strings: Vec<LineString> = Vec::new();
@@ -73,4 +77,66 @@ pub fn export_geo_linestring(drawing: &Drawing, flatten_value: f32) -> Vec<LineS
     }
 
     line_strings
+}
+
+/// Takes a dxf::Drawing and converts it to a Vec<geo_types::LineString>
+///
+/// First it converts it to a lyon_path then to Vec<geo_types::LineString>.
+/// flatten_value is used in lyon_exporter to flatten the curves to lines.
+/// A lower value will mean a more precise line_string when it comes to curves
+///
+/// # Examples
+///
+/// Basic Usage:
+///
+/// ```
+/// use dxfexports::export_geo_linestring;
+/// use dxf::Drawing;
+///
+/// let drawing = Drawing::load_file("test.dxf").expect("Not a good file");
+/// let linestrings = export_geo_linestring(&drawing, 0.0001);
+/// ```
+pub fn export_geo_linestring(drawing: &Drawing, flatten_value: f64) -> Vec<LineString> {
+    let mut line_strings: Vec<LineString> = Vec::new();
+
+    for e in drawing.entities() {
+        match e.specific {
+            EntityType::Line(ref line) => {
+                eprintln!("Line: {:?}", line);
+            }
+            EntityType::LwPolyline(ref polyline) => {
+                let mut points = Vec::new();
+                convert_lwpolyline_to_points(&polyline, &mut points, flatten_value);
+                line_strings.push(LineString::new(points));
+            }
+            _ => {
+                eprintln!("Other: {:?}", e.specific);
+            }
+        }
+    }
+
+    line_strings
+}
+
+pub fn convert_lwpolyline_to_points(
+    lwpolyline: &LwPolyline,
+    points: &mut Vec<Coord>,
+    tollerance: f64,
+) {
+    use super::dxf_helper::ArcMoveLineTo;
+    for arc in super::dxf_helper::lwpolyline_to_arcs_and_lines(lwpolyline) {
+        match arc {
+            ArcMoveLineTo::Arc(arc) => {
+                for point in arc.to_points(tollerance) {
+                    points.push(coord! {x: point.x, y: point.y});
+                }
+            }
+            ArcMoveLineTo::Move(point) => {
+                points.push(coord! {x: point.x, y: point.y});
+            }
+            ArcMoveLineTo::LineTo(point) => {
+                points.push(coord! {x: point.x, y: point.y});
+            }
+        }
+    }
 }
